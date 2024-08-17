@@ -1,0 +1,96 @@
+#EKF_Code_Python
+import numpy as np
+
+# Given parameters
+Q = np.array([
+    [1e-6, 0, 0],
+    [0, 1e-8, 0],
+    [0, 0, 1e-7]
+])
+
+R = 0.001  # Measurement noise covariance
+Po = np.array([
+    [1e-6, 0, 0],
+    [0, 0.01, 0],
+    [0, 0, 1e-6]
+])
+
+# Battery model parameters
+ocv_matrix = np.array([
+    [3.49, 3.5, 3.51],
+    [3.55, 3.57, 3.56],
+    [3.62, 3.63, 3.64],
+    [3.71, 3.71, 3.72],
+    [3.91, 3.93, 3.94],
+    [4.07, 4.08, 4.08],
+    [4.19, 4.19, 4.19]
+])
+
+soc_values = np.array([0, 0.1, 0.25, 0.5, 0.75, 0.9, 1])
+
+# Initial state [SOC, Vp, R0]
+x = np.array([1.0, 0, 0.0117])  # Starting with SOC = 1 (fully charged)
+P = Po.copy()  # Initial state covariance
+
+# Time step (assuming 1 second for simplicity)
+dt = 1
+
+# Battery capacity in Ah (15 Ah)
+battery_capacity = 15
+
+# Constant current discharge (7A)
+current = 7  # Discharge current in Amperes
+
+# Simulation duration (2 hours = 7200 seconds)
+total_time = 2 * 3600
+
+# Placeholder for measured voltage (adjusted based on OCV and SOC)
+measured_voltage = np.zeros(total_time)
+
+def ocv_from_soc(soc):
+    # Linear interpolation to find OCV from SOC
+    return np.interp(soc, soc_values, ocv_matrix[:, 1])  # Assuming temperature = 293K
+
+def h(x):
+    # Measurement function (battery voltage)
+    SOC, Vp, R0 = x
+    return ocv_from_soc(SOC) - Vp - R0 * current
+
+def f(x, current):
+    # State transition function
+    SOC, Vp, R0 = x
+    dSOC = -current * dt / (battery_capacity * 3600)  # SOC change per second
+    dVp = (-Vp + R1 * current) / tau1  # Simplified polarization voltage model
+    return np.array([SOC + dSOC, Vp + dVp, R0])
+
+# Placeholder values for R1 and tau1 (adjust as needed)
+R1 = 0.01
+tau1 = 100
+
+# Simulate over the duration of the discharge
+for t in range(total_time):
+    # Prediction Step
+    x_pred = f(x, current)
+    F = np.eye(3)  # Jacobian of f with respect to x (Identity for simplicity)
+    P_pred = F @ P @ F.T + Q
+    
+    # Generate synthetic measurement (replace with actual voltage data)
+    measured_voltage[t] = h(x_pred)
+    
+    # Measurement Update
+    z = measured_voltage[t]  # Actual voltage measurement at time t
+    H = np.array([-1, -1, -1])  # Jacobian of h with respect to x (simplified)
+    y = z - h(x_pred)  # Innovation
+    S = H @ P_pred @ H.T + R
+    K = P_pred @ H.T / S  # Kalman gain
+    x = x_pred + K * y  # State update
+    P = (np.eye(3) - K @ H) @ P_pred  # Covariance update
+    
+    # Ensure SOC stays within bounds [0, 1]
+    x[0] = np.clip(x[0], 0, 1)
+    
+    # Print the SOC every hour for verification
+    if t % 3600 == 0:
+        print(f"Time {t//3600} hour: Estimated SOC = {x[0]:.4f}, Measured Voltage = {z:.2f}V")
+
+
